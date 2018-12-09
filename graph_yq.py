@@ -220,7 +220,7 @@ class MyProbeHashMap(MutableMapping):
     def __setitem__( self, k, v ):
         j = self._hash_function( k )
         self._bucket_setitem( j, k, v )
-        if self._n > len( self._T ) // 2:
+        if self._n > len( self._T ) * 3 // 4: # load_factor less than 0.75
             self._resize( 2 * len( self._T ) - 1 )
 
     def __delitem__( self, k ):
@@ -312,8 +312,8 @@ class DeBrujinGraph:
         returns
             None
         '''
-        self._outgoing = MyProbeHashMap()
-        self._incoming = MyProbeHashMap()
+        self._outgoing = {} # MyProbeHashMap()
+        self._incoming = {} # MyProbeHashMap()
         self._k = k
         for node in nodes: # insert all node into graph
             self._insert_node(node)
@@ -354,8 +354,8 @@ class DeBrujinGraph:
         self._validate(x)
         if x in self.nodes():
             return  x # x already in graph
-        self._outgoing[x] = MyProbeHashMap()
-        self._incoming[x] = MyProbeHashMap()
+        self._outgoing[x] = {}#MyProbeHashMap()
+        self._incoming[x] = {}#MyProbeHashMap()
         return x
 
     def _insert_edge(self, u, v, x = None):
