@@ -1,8 +1,12 @@
 import random
 from collections.abc import MutableMapping
+# from collections import MutableMapping # for python 3.5
 from random import randrange
 
 bases = "ATCG"
+
+def random_seq(bases = bases, k = 21):
+    return "".join(random.choices(bases, k = k))
 
 # consider a DNA sequence with fixed length 21:
 # there are at most: pow(4, 21) = 4^21 = 4398046511104 possible sequences.
@@ -42,7 +46,7 @@ def code2seq(code: int, bases = bases) -> str:
     returns
         seq: an dna sequence with certain length
     """
-    code = bin(code)[3:] # skip '0b1'
+    code = bin(code)[3:]
     n = len(code) // 2
     seq = ""
     for i in range(n):
@@ -86,7 +90,7 @@ class MyProbeHashMap(MutableMapping):
     _AVAIL = object()
     _MIN_CAP = 11               # minimal capacity of the Map
     
-    def __init__( self, cap = 11, p = 109345121, probing = 'linear' ):
+    def __init__( self, cap = 11, p = 109345121, probing = 'double_hash' ):
         cap = max(MyProbeHashMap._MIN_CAP, cap)  # minimal capacity of Map
         # is this prime p big enough for k = 21?
         self._T = cap * [None]               # bucket array with cap entries
@@ -133,7 +137,8 @@ class MyProbeHashMap(MutableMapping):
     def _is_available( self, j ):
         return self._T[j] is None or self._T[j] is MyProbeHashMap._AVAIL
     
-    # different probing methods to solve collision
+
+    # three different probing methods to solve collision
     def _probing_linear(self, i, *args):
         return i
     
@@ -152,7 +157,7 @@ class MyProbeHashMap(MutableMapping):
     def _probing_random(self, i, k, *args):
         # this probing doesn't work well.
         random.seed(1)
-        return i * random.randint(1, 100)
+        return i * random.randint(1, 7)
     
     def get_collisions(self):
         return self._collisions
@@ -161,7 +166,7 @@ class MyProbeHashMap(MutableMapping):
         self._collisions = 0
         
     def _find_slot(self, j, k):
-        """this method support three different
+        """compared with _find_slot, this method support three different
         probing methods, and we can count the collision numbers
         """
         first_avail = None
@@ -220,7 +225,7 @@ class MyProbeHashMap(MutableMapping):
     def __setitem__( self, k, v ):
         j = self._hash_function( k )
         self._bucket_setitem( j, k, v )
-        if self._n > len( self._T ) * 3 // 4: # load_factor less than 0.75
+        if self._n > len( self._T ) // 2:
             self._resize( 2 * len( self._T ) - 1 )
 
     def __delitem__( self, k ):
@@ -274,7 +279,6 @@ class MyProbeHashMap(MutableMapping):
             self[k] = d
             return d
 
-
 class DeBrujinGraph:
     _bases = "ACTG"
     class Edge:
@@ -295,50 +299,57 @@ class DeBrujinGraph:
             return self._element
 
         def __str__( self ):
-            result = str(self._origin) + "-" 
-            result += str(self._element) 
-            result += "->" + str(self._destin)
-            return result
+            return str( self._element )
 
         def __hash__( self ):
             return seq_hash_code(self._origin + self._destin)
+        
 
     def __init__(self, nodes: [str], k = 21):
-        '''
-        init and build a graph with list of node
-        params
-            nodes: list of element, with each element represents a DNA sequence
-            k: the length of each DNA sequance
-        returns
-            None
-        '''
-        self._outgoing = {} # MyProbeHashMap()
-        self._incoming = {} # MyProbeHashMap()
+        map_cap = (len(nodes) // 3) * 4 + 1
+        self._outgoing = MyProbeHashMap(cap = map_cap)
+        self._incoming = MyProbeHashMap(cap = map_cap)
         self._k = k
+        self._edge_num = 0
+        
         for node in nodes: # insert all node into graph
             self._insert_node(node)
         # build edges
         for node in self.nodes():
             successors = self._all_possible_successors(node)
             for successor in successors:
-                if successor in self.nodes():
+                if successor in self:
                     self._insert_edge(node, successor, successor[-1])
-                    
+    
     def __str__(self):
-        s = "G ( "+ str(self.node_count()) + " nodes { "
+        s = "G( " + str(self.node_count()) + " nodes{ "
         for v in self.nodes():
             s += str( v ) + " "
-        s += "}, " + str(self.edge_count()) + " edges { "
+        s += "}, " + str(self.edge_count()) + " edges{ "
         for e in self.edges():
             s += str( e ) + " "
-        s += "})"
+        s += "} )"
         return s
 
     def _all_possible_successors(self, N: str) -> [str]:
-        return [N[1:]+base for base in DeBrujinGraph._bases]
+        return [N[1:] + base for base in DeBrujinGraph._bases]
 
     def _all_possible_predecessors(self, N: str) -> [str]:
-        return [base + N[:-1] for base in DeBrujinGraph._bases]  
+        return [base + N[:-1] for base in DeBrujinGraph._bases]
+        
+    def edges(self):
+        for origin in self:
+            successors = self._all_possible_successors(origin)
+            for successor in successors:
+                if successor in self:
+                    yield origin, successor
+  
+    def edge_count(self):
+        i = 0
+        print("in couting edges methods")
+        for key in self._outgoing.keys():
+            i += len(self._outgoing[key])
+        return i
 
     def _validate(self, x, edge = False):
         if x is None:
@@ -351,36 +362,27 @@ class DeBrujinGraph:
             raise ValueError("x should have {} characters".format(self._k))
 
     def _insert_node(self, x = None):
-        self._validate(x)
-        if x in self.nodes():
+        if x in self:
             return  x # x already in graph
-        self._outgoing[x] = {}#MyProbeHashMap()
-        self._incoming[x] = {}#MyProbeHashMap()
+        self._outgoing[x] = MyProbeHashMap(cap = 7)
+        self._incoming[x] = MyProbeHashMap(cap = 7)
         return x
 
     def _insert_edge(self, u, v, x = None):
-        self._validate(u)
-        self._validate(v)
-        self._validate(x, True)
-        edge = self.Edge(u, v, x)
-        self._outgoing[u][v] = edge
-        self._incoming[v][u] = edge      
+        if self._outgoing[u].get(v) is None:
+            edge = self.Edge(u, v, x)
+            self._outgoing[u][v] = edge
+            self._incoming[v][u] = edge
+            self._edge_num += 1
 
-    def edges(self):
-        result = set()
-        for secondary_map in self._outgoing.values():
-            result.update(secondary_map.values())
-        return result   
-
-    def node_count(self):
-        return len(self._outgoing)
-
-    def edge_count(self):
-        return sum( len( self._outgoing[v] ) for v in self._outgoing )   
-
+    def _remove_edge(self, u, v):
+        del self._outgoing[u][v]
+        del self._incoming[v][u]
+        self._edge_num -= 1
+        
     def __contains__(self, N: str) -> bool:
         # détermine si le graphe de Brujin contient le noeud N
-        return not (self._outgoing.get(N, None) is None)
+        return self._outgoing.get(N, None) is not None
 
     def load_factor(self) -> float:
         # calcule le facteur de charge de la table de hachage sous-jacente
@@ -388,75 +390,75 @@ class DeBrujinGraph:
         
     def add(self, N: str):
         # ajoute le noeud N au graphe
-        self._validate(N)
         if N in self.nodes():
             print("{} already exits in graph".format(N))
             return 
         self._insert_node(N)
         successors = self._all_possible_successors(N)
         for successor in successors:
-            if successor in self.nodes():
+            if self._outgoing.get(successor) is not None:
                 self._insert_edge(N, successor, successor[-1])
         predecessors = self._all_possible_predecessors(N)
         for predecessor in predecessors:
-            if predecessor in self.nodes():
+            if self._outgoing.get(predecessor) is not None:
                 self._insert_edge(predecessor, N, N[-1])
-    
+                
     def remove(self, N: str):
-        # enlève le noeud N du graphe
-        self._validate(N)
+        # self._validate(N)
         if not N in self.nodes():
             print("deleting... {} not in graph".format(N))
             return
-        
         successors = self._all_possible_successors(N)
         for successor in successors:
-            if successor in self.nodes():
-                del self._outgoing[N][successor]
-                del self._incoming[successor][N]
+            if self._outgoing[N].get(successor) is not None:
+                self._remove_edge(N, successor)
+                
         predecessors = self._all_possible_predecessors(N)
         for predecessor in predecessors:
-            if predecessor in self.nodes():
-                del self._incoming[N][predecessor]
-                del self._outgoing[predecessor][N]
-        
+            if self._incoming[N].get(predecessor) is not None:
+                self._remove_edge(predecessor, N)
+                
         del self._outgoing[N]
         del self._incoming[N]
-        return
-
+        pass # enlève le noeud N du graphe
+    
+    def __iter__(self):
+        return self.nodes()
+    
     def nodes(self):
         # retourne un itérable sur les noeuds du graphe
-        results = []
-        for key in self._outgoing.keys():
-            results.append(key)
-        return results
+        for key in self._outgoing:
+            yield key
     
+    def node_count(self):
+        return len(self._outgoing)
+
     def predecessors(self, N: str):
         # retourne tous les prédécesseur du noeud N
-        self._validate(N)
+        # self._validate(N)
+        if not N in self:
+            return None
         all_possible = self._all_possible_predecessors(N)
         result = []
         for predecessor in all_possible:
-            if predecessor in self:
+            if self._incoming[N].get(predecessor) is not None:
                 result.append(predecessor)
         return result
     
     def successors(self, N: str):
         # retourne tous les successeurs du noeud N
-        self._validate(N)
+        # self._validate(N)
+        if not N in self:
+            return None
         all_possible = self._all_possible_successors(N)
         result = []
         for successor in all_possible:
-            if successor in self:
+            if self._outgoing[N].get(successor) is not None:
                 result.append(successor)
         return result
 
 
-
-# ============ test codes ====================
-def random_seq(bases = bases, k = 21):
-    return "".join(random.choices(bases, k = k))
-
+# =============== test codes =====================
 # test hash code and code2seq
 def test_hash_code(times = 1000):
     for _ in range(times):
@@ -473,28 +475,31 @@ def test_hash_map():
     pass
 
 def test_graph():
-    seq = "ACTGAGT"
+    seq = "ACTGAGTCATGGATG"
     k = 2
     kmers = [seq[i:i+k] for i in range(len(seq) - k + 1)]
-    print("kmers: ", kmers)
     print("seq: ", seq)
+    print("kmers: ", kmers)
 
     print("initialize graph with kmers and k")
     graph = DeBrujinGraph(kmers, k = k)
     print("after initialize, graph is:")
     print(graph)
+    print(graph._edge_num)
     print("load_factor: ", graph.load_factor())
     
     print("nodes' predecesors and successors")
     for node in graph.nodes():
         print(graph.predecessors(node), node, graph.successors(node))
 
-    node_to_add = "TT"
-    print("add node ", node_to_add)
-    graph.add(node_to_add)
-    print("after add {}, graph is:\n{}".format(node_to_add, graph))            
+    nodes_to_add = ["TT", "TA", "GT", "AA"]
+    for node_to_add in nodes_to_add:
+        print("add node ", node_to_add)
+        graph.add(node_to_add)
+        print("after add {}, graph is:\n{}".format(node_to_add, graph))   
+        print(graph._edge_num)
 
-    print("all {} edges in graph:".format(graph.edge_count()))
+    print("all {} edges in graph:".format(graph.edge_count()), graph._edge_num)
     for edge in graph.edges():
         print(edge, end = " ")
     print()
@@ -504,16 +509,20 @@ def test_graph():
         print(node, end = " ")
     print()
 
-    test_nodes = ["GG", "CG", "TA", "GC", "TT", "AA"]
+    print("testing whether a node is in graph...")
+    test_nodes = ["GG", "CG", "TA", "GC", "TT", "AA", "TT", "AG", "GT", "TG",\
+     "GA", "AC"]
     for test_node in test_nodes:
         s = "{} is ".format(test_node)
         if not test_node in graph:
             s += "NOT "
-        s += "in graph {}".format(str(graph.nodes()))
+        s += "in graph"
         print(s)
+        
 
     print("testing delete node in graph...")
-    deleting_nodes = ["GC", "CT", "GT"]
+    deleting_nodes = ["GC", "CT", "TT", "AG", "AA", "CT", "AC", "GA", "GT",\
+                      "TG"]
     for node in deleting_nodes:
         if node in graph:
             graph.remove(node)
@@ -521,6 +530,7 @@ def test_graph():
             print(graph)
         else:
             print("node {} is not in graph, can't delete it".format(node))
+        print(graph._edge_num)
     
     print("nodes' predecesors and successors")
     for node in graph.nodes():
@@ -528,8 +538,15 @@ def test_graph():
     
     print("load_factor: ", graph.load_factor())
     print("node count: ", graph.node_count())
-    print("edge count: ", graph.edge_count())
-
+    print("edge count: ", graph.edge_count(), graph._edge_num)
+    
+    for key in graph:
+        print(key, end = " ")
+    print()
+    
+    for u, v in graph.edges():
+        print(u, "->", v)
+    print()
 
 
 if __name__ == "__main__":
@@ -537,5 +554,4 @@ if __name__ == "__main__":
     #test_hash_code()
     #test_hash_map()
     test_graph()
-    print("end unit test.")
-    
+    print("end unit test.")        
